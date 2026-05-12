@@ -43,17 +43,21 @@ Predicted scoreline uses a team-specific Poisson model (Dixon-Coles-flavoured):
 λ_away = away.attack_rate × home.defense_rate × league_avg
 ```
 
-- `attack_rate`, `defense_rate` are per-team multipliers vs the league average
-  (1.0 = average; computed in `app/data/compute_attack_defense.py`)
-- Computed from historical goals scored/conceded with **4-year exponential
-  time decay** and **Bayesian shrinkage** (k=4) toward 1.0
+- `attack_rate`, `defense_rate` are per-team multipliers vs the league average,
+  fitted by **iterative MLE** that accounts for opponent strength (so scoring
+  5 vs a weak defence is worth less than scoring 2 vs a top defence; see
+  `app/data/compute_attack_defense.py`)
+- Computed from historical goals with **4-year exponential time decay** and
+  **Bayesian shrinkage** (k=4) toward 1.0 — keeps teams with few games from
+  getting extreme rates
 - `league_avg` ≈ 1.37 goals per team per match (recomputed from the dataset)
 - `home_factor` = 1.15 for matches where the home team is a 2026 host, else 1.0
 
-The predicted scoreline is **one deterministic Poisson sample** per match
-(RNG seeded by `match_id`). Sampling rather than taking the mode/mean
-captures the natural variance of football scorelines: many matches end 1:0
-or 2:0, and rounding `λ_h≈1.5, λ_a≈1.0` to `2:1` would mask that diversity.
+Predicted scoreline = `round(λ_h), round(λ_a)`. With MLE-fitted rates λ
+spreads widely enough that simple rounding already produces a sensible
+distribution (top-vs-weak → 3:0 or 4:0, top-vs-mid → 2:1 or 3:1,
+top-vs-top → 1:1 or 2:1). The Monte Carlo simulation samples Poisson directly
+to capture full scoreline variance for tournament probabilities.
 
 ## Monte Carlo
 
@@ -100,8 +104,8 @@ docker compose exec backend python -m app.data.recompute_elo
 - [x] WC 2026 final draw seeded (groups A–L)
 - [x] Historical data loaded (martj42 dataset since 1990, ~32k matches)
 - [x] Live odds ingestion (The Odds API, ~26 bookmakers per match)
-- [x] Team-specific Poisson goal model (attack / defense rates)
-- [x] Per-match Poisson scoreline sampling (deterministic by match id)
+- [x] Team-specific Poisson goal model with MLE-fitted attack / defense rates
+      (Dixon-Coles style, opponent-strength aware)
 - [ ] Periodic odds refresh (cron / scheduler — odds change daily)
 - [ ] FIFA 2026 R32 seeding table → materialise knockout fixtures from group
       results
