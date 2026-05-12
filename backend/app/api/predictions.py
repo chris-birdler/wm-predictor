@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,14 +32,15 @@ def _predicted_score(
 ) -> tuple[int, int]:
     """Scoreline from team-rate model, constrained to the ensemble's winner.
 
-    Start from round(λ_h), round(λ_a) — what the team-rate Poisson model
-    expects on average. If that already produces the same winner as
-    argmax(p_h, p_d, p_a) from the ensemble, return it. Otherwise pick the
-    integer scoreline (closest in L2 distance to (λ_h, λ_a)) that respects
-    the ensemble winner — minimum tweak to remove the contradiction.
+    Start from floor(λ_h), floor(λ_a) — the mode of independent Poissons,
+    not the rounded mean. With λ_underdog typically in 0.5–0.9, floor(0.74)
+    is 0, producing 1:0 / 2:0 scorelines that match real football
+    distributions, while round(0.74) = 1 forces every match to give the
+    underdog at least a goal.
 
-    Result: predicted score never disagrees with the W/D/L probability bar,
-    while the goal counts still reflect the team-rate Poisson means.
+    If the mode already produces the same winner as argmax(p_h, p_d, p_a)
+    from the ensemble, return it. Otherwise pick the integer scoreline
+    closest in L2 distance to (λ_h, λ_a) that respects the ensemble winner.
     """
     if p_h >= p_d and p_h >= p_a:
         winner = 1   # home wins → h > a
@@ -47,8 +49,8 @@ def _predicted_score(
     else:
         winner = 0   # draw → h == a
 
-    h_base = round(lam_h)
-    a_base = round(lam_a)
+    h_base = math.floor(lam_h)
+    a_base = math.floor(lam_a)
     base_winner = 1 if h_base > a_base else -1 if a_base > h_base else 0
     if base_winner == winner:
         return h_base, a_base
