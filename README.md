@@ -53,11 +53,16 @@ Predicted scoreline uses a team-specific Poisson model (Dixon-Coles-flavoured):
 - `league_avg` ≈ 1.37 goals per team per match (recomputed from the dataset)
 - `home_factor` = 1.15 for matches where the home team is a 2026 host, else 1.0
 
-Predicted scoreline = `round(λ_h), round(λ_a)`. With MLE-fitted rates λ
-spreads widely enough that simple rounding already produces a sensible
-distribution (top-vs-weak → 3:0 or 4:0, top-vs-mid → 2:1 or 3:1,
-top-vs-top → 1:1 or 2:1). The Monte Carlo simulation samples Poisson directly
-to capture full scoreline variance for tournament probabilities.
+Predicted scoreline starts from `round(λ_h), round(λ_a)`. If that already
+produces the same winner as `argmax(p_h, p_d, p_a)` from the ensemble we
+keep it; otherwise we pick the integer scoreline closest in L2 to (λ_h, λ_a)
+that respects the ensemble winner. This guarantees **the displayed score
+never contradicts the W/D/L probability bar** — the ensemble (odds + Elo +
+form + H2H) decides who wins, the team-rate Poisson decides by how much.
+
+The Monte Carlo simulation samples Poisson directly to capture full
+scoreline variance for tournament probabilities; the rounded prediction is
+just for the UI.
 
 ## Monte Carlo
 

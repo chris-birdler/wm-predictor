@@ -22,18 +22,52 @@ class PredictionOut(BaseModel):
     predicted_score: tuple[int, int]
 
 
-def _predicted_score(lam_h: float, lam_a: float) -> tuple[int, int]:
-    """Predicted scoreline = rounded expected goals.
+def _predicted_score(
+    lam_h: float,
+    lam_a: float,
+    p_h: float,
+    p_d: float,
+    p_a: float,
+) -> tuple[int, int]:
+    """Scoreline from team-rate model, constrained to the ensemble's winner.
 
-    With team rates fitted by iterative MLE, λ spreads widely enough (0.5 to
-    3.5+) that simple rounding already produces a diverse, sensible
-    distribution: top-vs-mid → 2:1 or 3:1, top-vs-weak → 3:0 or 4:0,
-    top-vs-top → 1:1, mid-vs-mid → 1:1 or 2:1. Random Poisson sampling per
-    match was tried but produced rare upsets that contradicted the win
-    probabilities (e.g. a heavily-favoured team predicted to lose), confusing
-    the UX. Rounding the mean reflects what the model actually expects.
+    Start from round(λ_h), round(λ_a) — what the team-rate Poisson model
+    expects on average. If that already produces the same winner as
+    argmax(p_h, p_d, p_a) from the ensemble, return it. Otherwise pick the
+    integer scoreline (closest in L2 distance to (λ_h, λ_a)) that respects
+    the ensemble winner — minimum tweak to remove the contradiction.
+
+    Result: predicted score never disagrees with the W/D/L probability bar,
+    while the goal counts still reflect the team-rate Poisson means.
     """
-    return round(lam_h), round(lam_a)
+    if p_h >= p_d and p_h >= p_a:
+        winner = 1   # home wins → h > a
+    elif p_a >= p_d:
+        winner = -1  # away wins → a > h
+    else:
+        winner = 0   # draw → h == a
+
+    h_base = round(lam_h)
+    a_base = round(lam_a)
+    base_winner = 1 if h_base > a_base else -1 if a_base > h_base else 0
+    if base_winner == winner:
+        return h_base, a_base
+
+    best = (1, 0) if winner == 1 else (0, 1) if winner == -1 else (0, 0)
+    best_dev = float("inf")
+    for h in range(8):
+        for a in range(8):
+            if winner == 1 and h <= a:
+                continue
+            if winner == -1 and a <= h:
+                continue
+            if winner == 0 and h != a:
+                continue
+            dev = (h - lam_h) ** 2 + (a - lam_a) ** 2
+            if dev < best_dev:
+                best_dev = dev
+                best = (h, a)
+    return best
 
 
 def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
@@ -56,7 +90,13 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
         p_away=pred.p_away,
         expected_home_goals=pred.expected_home_goals,
         expected_away_goals=pred.expected_away_goals,
-        predicted_score=_predicted_score(pred.expected_home_goals, pred.expected_away_goals),
+        predicted_score=_predicted_score(
+            pred.expected_home_goals,
+            pred.expected_away_goals,
+            pred.p_home,
+            pred.p_draw,
+            pred.p_away,
+        ),
     )
 
 
