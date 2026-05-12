@@ -34,6 +34,7 @@ export interface Prediction {
   expected_home_goals: number;
   expected_away_goals: number;
   predicted_score: [number, number];
+  has_odds: boolean;
 }
 
 export interface TeamProbs {

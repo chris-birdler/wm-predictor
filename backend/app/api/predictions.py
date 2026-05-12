@@ -21,6 +21,7 @@ class PredictionOut(BaseModel):
     expected_home_goals: float
     expected_away_goals: float
     predicted_score: tuple[int, int]
+    has_odds: bool  # bookmaker odds were used as one of the ensemble components
 
 
 def _predicted_score(
@@ -99,6 +100,7 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
             pred.p_draw,
             pred.p_away,
         ),
+        has_odds="odds" in pred.components,
     )
 
 

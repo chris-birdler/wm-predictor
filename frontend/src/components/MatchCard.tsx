@@ -62,7 +62,16 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
       : "text-fifa-muted";
 
   return (
-    <div className="rounded-lg border border-fifa-line bg-fifa-surface px-3 py-2 transition hover:border-fifa-ink/20">
+    <div className="relative rounded-lg border border-fifa-line bg-fifa-surface px-3 py-2 transition hover:border-fifa-ink/20">
+      {prediction?.has_odds && (
+        <span
+          className="absolute right-2 top-1.5 inline-flex items-center gap-1 rounded-full bg-fifa-green/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fifa-green"
+          title="Bookmaker odds available — ensemble used the market signal (60% weight)"
+        >
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-fifa-green" />
+          Odds
+        </span>
+      )}
       <div className="flex items-center gap-3">
         <div className="flex flex-1 items-center justify-end gap-2 truncate">
           <span className="truncate text-sm font-semibold text-fifa-ink">
