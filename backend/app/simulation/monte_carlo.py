@@ -4,15 +4,25 @@ Format: 12 groups of 4, top 2 + 8 best thirds advance to Round of 32. Knockout
 from there: R32 -> R16 -> QF -> SF -> Final (+ third-place playoff).
 
 For each simulated tournament:
-  1. Draw scores for all 72 group matches from bivariate Poisson(lam_h, lam_a).
+  1. For every group match: sample the W/D/L outcome from the ensemble's
+     p_home / p_draw / p_away (odds + Elo + form + H2H — the same blend that
+     drives the match-card W/D/L bar), then sample a scoreline from the
+     team-rate bivariate Poisson constrained to that outcome.
   2. Build group tables (pts, GD, GF), determine top-2 and best thirds.
   3. Seed Round of 32 using the official slotting table.
-  4. Simulate knockout matches (extra time + penalty shootout if needed).
+  4. Simulate knockout matches by sampling the same W/D/L outcome; draws are
+     resolved by a slight-favourite shootout coin flip.
   5. Record per-team furthest stage reached.
 
 Returns a per-team probability of reaching each stage.
+
+Design note: the single-match prediction in `app/api/predictions.py` uses the
+ensemble winner constrained by team-rate goal magnitudes. The simulation
+uses the same split — ensemble for the W/D/L choice (which respects the 60%
+bookmaker market signal), team rates only for the goal-count distribution.
 """
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -30,12 +40,8 @@ class GroupTeam:
     gf: int = 0
 
 
-def _sample_score(rng: np.random.Generator, lam_h: float, lam_a: float) -> tuple[int, int]:
-    return int(rng.poisson(lam_h)), int(rng.poisson(lam_a))
-
-
-def _sample_match_outcome(rng: np.random.Generator, p_h: float, p_d: float) -> int:
-    """Returns 1 (home win), 0 (draw), -1 (away win)."""
+def _sample_outcome(rng: np.random.Generator, p_h: float, p_d: float, p_a: float) -> int:
+    """Returns 1 (home win), 0 (draw), -1 (away win) from ensemble probs."""
     r = rng.random()
     if r < p_h:
         return 1
@@ -44,28 +50,57 @@ def _sample_match_outcome(rng: np.random.Generator, p_h: float, p_d: float) -> i
     return -1
 
 
+def _sample_goals_given_outcome(
+    rng: np.random.Generator,
+    lam_h: float,
+    lam_a: float,
+    outcome: int,
+    max_tries: int = 30,
+) -> tuple[int, int]:
+    """Sample (h, a) from Poisson(λ_h)×Poisson(λ_a) constrained to the outcome.
+
+    Rejection sampling: draw a joint Poisson sample and keep the first one
+    whose sign matches `outcome`. With λ values of 1–3 this converges in
+    1–4 attempts on average. The fallback (after max_tries) nudges
+    floor(λ_h)/floor(λ_a) by ±1 so the constraint is always satisfied.
+    """
+    for _ in range(max_tries):
+        h = int(rng.poisson(lam_h))
+        a = int(rng.poisson(lam_a))
+        if outcome == 1 and h > a:
+            return h, a
+        if outcome == -1 and a > h:
+            return h, a
+        if outcome == 0 and h == a:
+            return h, a
+
+    h = max(0, int(math.floor(lam_h)))
+    a = max(0, int(math.floor(lam_a)))
+    if outcome == 1 and h <= a:
+        return a + 1, a
+    if outcome == -1 and a <= h:
+        return h, h + 1
+    if outcome == 0 and h != a:
+        m = min(h, a)
+        return m, m
+    return h, a
+
+
 def _knockout_winner(
     rng: np.random.Generator,
     team_a: int,
     team_b: int,
     pred: MatchPrediction,
 ) -> int:
-    """Simulate KO match with ET + penalties. Returns winning team id."""
-    h, a = _sample_score(rng, pred.expected_home_goals, pred.expected_away_goals)
-    if h > a:
+    """Sample KO winner from the ensemble W/D/L; resolve draws by 1X2 ratio."""
+    outcome = _sample_outcome(rng, pred.p_home, pred.p_draw, pred.p_away)
+    if outcome == 1:
         return team_a
-    if a > h:
+    if outcome == -1:
         return team_b
-    # ET: half a game worth of additional goals
-    h_et, a_et = _sample_score(rng, pred.expected_home_goals * 0.5, pred.expected_away_goals * 0.5)
-    h += h_et
-    a += a_et
-    if h > a:
-        return team_a
-    if a > h:
-        return team_b
-    # Penalties: lean to slight favorite per the underlying 1X2 (drop draw mass).
-    pa = pred.p_home / (pred.p_home + pred.p_away)
+    # Draw → ET + penalties. Bias the shootout toward the slight 1X2 favourite.
+    denom = pred.p_home + pred.p_away
+    pa = pred.p_home / denom if denom > 0 else 0.5
     return team_a if rng.random() < pa else team_b
 
 
@@ -86,7 +121,13 @@ def _simulate_groups(
 
     for group, matches in group_matches.items():
         for home_id, away_id, pred in matches:
-            h_goals, a_goals = _sample_score(rng, pred.expected_home_goals, pred.expected_away_goals)
+            outcome = _sample_outcome(rng, pred.p_home, pred.p_draw, pred.p_away)
+            h_goals, a_goals = _sample_goals_given_outcome(
+                rng,
+                pred.expected_home_goals,
+                pred.expected_away_goals,
+                outcome,
+            )
 
             for tid in (home_id, away_id):
                 if tid not in standings[group]:
@@ -98,9 +139,9 @@ def _simulate_groups(
             away.gf += a_goals
             home.gd += h_goals - a_goals
             away.gd += a_goals - h_goals
-            if h_goals > a_goals:
+            if outcome == 1:
                 home.pts += 3
-            elif h_goals < a_goals:
+            elif outcome == -1:
                 away.pts += 3
             else:
                 home.pts += 1
