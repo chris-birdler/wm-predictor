@@ -42,7 +42,12 @@ def run_simulation(n_runs: int = 0, db: Session = Depends(get_db)) -> Simulation
         .order_by(Match.group, Match.kickoff)
         .all()
     )
-    teams_by_id: dict[int, Team] = {t.id: t for t in db.query(Team).all()}
+    # Restrict to the 48 WC 2026 teams (Team.group is set only on seeded
+    # tournament participants) so historical-only teams don't appear in the
+    # simulation table with 0% probabilities everywhere.
+    teams_by_id: dict[int, Team] = {
+        t.id: t for t in db.query(Team).filter(Team.group.isnot(None)).all()
+    }
 
     group_matches: dict[str, list] = {}
     for m in group_matches_q:
