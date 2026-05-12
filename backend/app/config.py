@@ -15,15 +15,15 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173"
 
     ENSEMBLE_WEIGHT_ODDS: float = 0.60
-    ENSEMBLE_WEIGHT_ELO: float = 0.25
+    ENSEMBLE_WEIGHT_ELO: float = 0.27
     ENSEMBLE_WEIGHT_FORM: float = 0.10
     ENSEMBLE_WEIGHT_H2H: float = 0.03
-    ENSEMBLE_WEIGHT_HOME: float = 0.02
 
     ELO_K_WORLDCUP: float = 60
     ELO_K_CONTINENTAL: float = 50
     ELO_K_QUALIFIER: float = 40
-    ELO_K_NATIONS: float = 35
+    ELO_K_NATIONS: float = 40
+    ELO_K_NATIONS_FINALS: float = 50
     ELO_K_FRIENDLY: float = 20
 
     MC_DEFAULT_RUNS: int = 10000

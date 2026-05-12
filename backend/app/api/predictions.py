@@ -1,14 +1,14 @@
+import math
+import random
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.auth import current_user
 from app.db import get_db
 from app.models.match import Match, MatchStage
-from app.models.prediction import ModelPrediction, UserTip
-from app.models.user import User
+from app.models.prediction import ModelPrediction
 from app.prediction.ensemble import predict_match
 
 router = APIRouter(prefix="/predictions", tags=["predictions"])
@@ -21,11 +21,33 @@ class PredictionOut(BaseModel):
     p_away: float
     expected_home_goals: float
     expected_away_goals: float
-    most_likely_score: tuple[int, int]
+    predicted_score: tuple[int, int]
 
 
-def _most_likely_score(lam_h: float, lam_a: float) -> tuple[int, int]:
-    return (round(lam_h), round(lam_a))
+def _poisson_sample(rng: random.Random, lam: float, cap: int = 9) -> int:
+    """Sample from Poisson(lam) via inverse CDF. Bounded for safety."""
+    u = rng.random()
+    cum = 0.0
+    p = math.exp(-lam)
+    for k in range(cap):
+        cum += p
+        if u < cum:
+            return k
+        p *= lam / (k + 1)
+    return cap
+
+
+def _predicted_score(match_id: int, lam_h: float, lam_a: float) -> tuple[int, int]:
+    """Deterministic Poisson sample seeded by match id.
+
+    Rounding the mean or taking the joint mode collapses to (1,1) or (2,1) for
+    almost every WC match because λ_h and λ_a both sit in 1–2 for teams of
+    similar strength. Sampling captures the natural variance of football
+    scorelines (many 1:0, 2:0, 0:0, 2:2 etc.) while remaining stable across
+    requests by seeding the RNG with the match id.
+    """
+    rng = random.Random(match_id)
+    return _poisson_sample(rng, lam_h), _poisson_sample(rng, lam_a)
 
 
 def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
@@ -48,7 +70,7 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
         p_away=pred.p_away,
         expected_home_goals=pred.expected_home_goals,
         expected_away_goals=pred.expected_away_goals,
-        most_likely_score=_most_likely_score(pred.expected_home_goals, pred.expected_away_goals),
+        predicted_score=_predicted_score(match.id, pred.expected_home_goals, pred.expected_away_goals),
     )
 
 
@@ -90,58 +112,3 @@ def predict_stage(stage: str, db: Session = Depends(get_db)) -> list[PredictionO
         raise HTTPException(400, f"Unknown stage '{stage}'") from e
     matches = db.query(Match).filter(Match.stage == stage_enum).order_by(Match.kickoff).all()
     return [_compute_and_persist(db, m) for m in matches]
-
-
-# --- User tips ----------------------------------------------------------------
-
-class TipIn(BaseModel):
-    home_score: int
-    away_score: int
-
-
-class TipOut(BaseModel):
-    match_id: int
-    home_score: int
-    away_score: int
-    points: int | None
-
-
-@router.post("/tip/{match_id}", response_model=TipOut)
-def submit_tip(
-    match_id: int,
-    tip: TipIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(current_user),
-) -> TipOut:
-    match = db.get(Match, match_id)
-    if match is None:
-        raise HTTPException(404, "Match not found")
-    existing = (
-        db.query(UserTip)
-        .filter(UserTip.user_id == user.id, UserTip.match_id == match_id)
-        .first()
-    )
-    if existing:
-        existing.home_score = tip.home_score
-        existing.away_score = tip.away_score
-    else:
-        existing = UserTip(
-            user_id=user.id,
-            match_id=match_id,
-            home_score=tip.home_score,
-            away_score=tip.away_score,
-        )
-        db.add(existing)
-    db.commit()
-    return TipOut(
-        match_id=match_id,
-        home_score=existing.home_score,
-        away_score=existing.away_score,
-        points=existing.points,
-    )
-
-
-@router.get("/tips/mine", response_model=list[TipOut])
-def my_tips(db: Session = Depends(get_db), user: User = Depends(current_user)) -> list[TipOut]:
-    tips = db.query(UserTip).filter(UserTip.user_id == user.id).all()
-    return [TipOut(match_id=t.match_id, home_score=t.home_score, away_score=t.away_score, points=t.points) for t in tips]

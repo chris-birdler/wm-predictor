@@ -44,11 +44,6 @@ export const api = {
     http<Prediction[]>(`/predictions/groups/all`, { method: "POST" }),
   predictStage: (stage: string) =>
     http<Prediction[]>(`/predictions/stage/${stage}`, { method: "POST" }),
-  submitTip: (matchId: number, home: number, away: number) =>
-    http(`/predictions/tip/${matchId}`, {
-      method: "POST",
-      body: JSON.stringify({ home_score: home, away_score: away }),
-    }),
   runSimulation: (n_runs?: number) =>
     http<SimulationResponse>(`/simulation/run${n_runs ? `?n_runs=${n_runs}` : ""}`, {
       method: "POST",

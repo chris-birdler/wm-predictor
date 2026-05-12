@@ -13,6 +13,7 @@ class MatchType(str, enum.Enum):
     CONTINENTAL = "continental"
     QUALIFIER = "qualifier"
     NATIONS = "nations"
+    NATIONS_FINALS = "nations_finals"
     FRIENDLY = "friendly"
 
 

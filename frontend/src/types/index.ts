@@ -33,7 +33,7 @@ export interface Prediction {
   p_away: number;
   expected_home_goals: number;
   expected_away_goals: number;
-  most_likely_score: [number, number];
+  predicted_score: [number, number];
 }
 
 export interface TeamProbs {

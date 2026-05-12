@@ -15,11 +15,12 @@ from app.models.match import MatchType
 
 HOME_ADVANTAGE_ELO = 100.0
 
-# Match types where confederation depth matters. WC + Continental + Nations
-# League pit confederations against each other or are universally taken
-# seriously, so we keep the base K. Qualifiers and friendlies are where weak
-# co-confed opponents inflate Elo, so we down-weight by the weaker confed.
-_CONFED_SENSITIVE = {MatchType.QUALIFIER, MatchType.FRIENDLY}
+# Match types where confederation depth matters. WC + Nations League pit
+# confederations against each other (or are universally serious), so keep the
+# base K. Qualifiers, friendlies, AND continental finals (AFCON, Asian Cup,
+# Gold Cup) are where weak co-confed opponents inflate Elo — apply the
+# weaker-confed multiplier.
+_CONFED_SENSITIVE = {MatchType.QUALIFIER, MatchType.FRIENDLY, MatchType.CONTINENTAL}
 
 
 def k_factor(
@@ -32,6 +33,7 @@ def k_factor(
         MatchType.CONTINENTAL: settings.ELO_K_CONTINENTAL,
         MatchType.QUALIFIER: settings.ELO_K_QUALIFIER,
         MatchType.NATIONS: settings.ELO_K_NATIONS,
+        MatchType.NATIONS_FINALS: settings.ELO_K_NATIONS_FINALS,
         MatchType.FRIENDLY: settings.ELO_K_FRIENDLY,
     }[match_type]
 

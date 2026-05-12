@@ -26,18 +26,33 @@ export default function Login() {
   };
 
   return (
-    <form onSubmit={submit} className="mx-auto max-w-sm space-y-3 rounded-xl bg-slate-900/70 p-6 ring-1 ring-slate-800">
-      <h1 className="text-2xl font-bold">{mode === "login" ? "Anmelden" : "Registrieren"}</h1>
+    <form
+      onSubmit={submit}
+      className="mx-auto max-w-sm space-y-4 rounded-2xl border border-fifa-line bg-fifa-surface p-6 shadow-sm"
+    >
+      <div className="text-center">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-fifa-gradient font-display text-base font-black text-white">
+          26
+        </span>
+        <h1 className="mt-3 font-display text-2xl font-extrabold tracking-tight text-fifa-ink">
+          {mode === "login" ? "Sign in" : "Create account"}
+        </h1>
+        <p className="mt-1 text-xs text-fifa-dim">
+          {mode === "login"
+            ? "Welcome back to the predictor."
+            : "Save your predictions across sessions."}
+        </p>
+      </div>
       <input
-        className="w-full rounded bg-slate-800 px-3 py-2"
-        placeholder="Benutzername"
+        className="w-full rounded-md border border-fifa-line bg-fifa-surface px-3 py-2 text-fifa-ink focus:border-fifa-pink focus:outline-none"
+        placeholder="Username"
         value={username}
         onChange={(e) => setUsername(e.target.value)}
         required
       />
       {mode === "register" && (
         <input
-          className="w-full rounded bg-slate-800 px-3 py-2"
+          className="w-full rounded-md border border-fifa-line bg-fifa-surface px-3 py-2 text-fifa-ink focus:border-fifa-pink focus:outline-none"
           type="email"
           placeholder="Email"
           value={email}
@@ -46,23 +61,25 @@ export default function Login() {
         />
       )}
       <input
-        className="w-full rounded bg-slate-800 px-3 py-2"
+        className="w-full rounded-md border border-fifa-line bg-fifa-surface px-3 py-2 text-fifa-ink focus:border-fifa-pink focus:outline-none"
         type="password"
-        placeholder="Passwort"
+        placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         required
       />
-      {err && <p className="text-sm text-rose-400">{err}</p>}
-      <button className="w-full rounded bg-accent px-4 py-2 font-semibold text-slate-900 hover:bg-cyan-300">
-        {mode === "login" ? "Login" : "Registrieren"}
+      {err && <p className="text-sm text-fifa-red">{err}</p>}
+      <button className="w-full rounded-md bg-fifa-pink px-4 py-2 font-display font-bold uppercase tracking-wide text-white shadow-sm transition hover:bg-fifa-magenta">
+        {mode === "login" ? "Sign in" : "Register"}
       </button>
       <button
         type="button"
         onClick={() => setMode(mode === "login" ? "register" : "login")}
-        className="block w-full text-center text-sm text-slate-400 hover:text-slate-200"
+        className="block w-full text-center text-sm text-fifa-dim hover:text-fifa-ink"
       >
-        {mode === "login" ? "Noch kein Account? Registrieren" : "Schon registriert? Login"}
+        {mode === "login"
+          ? "No account yet? Register"
+          : "Already have an account? Sign in"}
       </button>
     </form>
   );

@@ -5,7 +5,7 @@ matches since 1872, updated daily. Columns:
 date, home_team, away_team, home_score, away_score, tournament, city, country, neutral.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 import httpx
 import pandas as pd
@@ -37,16 +37,47 @@ NAME_ALIASES: dict[str, str] = {
 }
 
 
-def _classify_tournament(name: str) -> MatchType:
+# UEFA Nations League finals tournament windows (4-team mini-tournament).
+# eloratings.net applies K=50 to these matches vs K=40 for group stage.
+# Source data doesn't tag these separately, so detect by date window.
+_NATIONS_FINALS_WINDOWS: tuple[tuple[date, date], ...] = (
+    (date(2019, 6, 5), date(2019, 6, 9)),     # Portugal
+    (date(2021, 10, 6), date(2021, 10, 10)),  # Italy
+    (date(2023, 6, 14), date(2023, 6, 18)),   # Netherlands
+    (date(2025, 6, 4), date(2025, 6, 8)),     # Germany
+)
+
+
+def _is_nations_finals(match_date: date) -> bool:
+    return any(start <= match_date <= end for start, end in _NATIONS_FINALS_WINDOWS)
+
+
+def _classify_tournament(name: str, match_date: date) -> MatchType:
     lower = name.lower()
-    if "world cup" in lower:
-        return MatchType.WORLDCUP
-    if any(k in lower for k in ["euro", "copa america", "africa cup", "asian cup", "concacaf"]):
-        return MatchType.CONTINENTAL
+    # Qualifiers first — otherwise "FIFA World Cup qualification" hits the WC
+    # branch and gets K=60 instead of K=40.
     if "qualification" in lower or "qualifier" in lower:
         return MatchType.QUALIFIER
+    # Nations League before continental keywords — otherwise "CONCACAF Nations
+    # League" matches the CONCACAF continental keyword.
     if "nations league" in lower:
-        return MatchType.NATIONS
+        return MatchType.NATIONS_FINALS if _is_nations_finals(match_date) else MatchType.NATIONS
+    if "world cup" in lower:
+        # Non-FIFA imitations (Viva World Cup, CONIFA) — treat as friendly-grade.
+        return MatchType.WORLDCUP if "fifa" in lower else MatchType.FRIENDLY
+    # Specific continental finals tournaments. "copa" covers Copa América
+    # (accent-safe); "african cup" matches "African Cup of Nations".
+    if any(k in lower for k in (
+        "euro",
+        "copa",
+        "african cup",
+        "asian cup",
+        "gold cup",
+        "concacaf championship",
+        "oceania nations cup",
+        "confederations cup",
+    )):
+        return MatchType.CONTINENTAL
     return MatchType.FRIENDLY
 
 
@@ -114,8 +145,8 @@ def ingest_historical(db: Session, since_year: int = 1990) -> tuple[int, int]:
     for _, row in df.iterrows():
         home = _get_team(row["home_team"])
         away = _get_team(row["away_team"])
-        mt = _classify_tournament(row["tournament"])
         kickoff = row["date"].to_pydatetime()
+        mt = _classify_tournament(row["tournament"], kickoff.date())
         neutral = bool(row.get("neutral", False))
 
         key = (home.id, away.id, kickoff.date().isoformat())
