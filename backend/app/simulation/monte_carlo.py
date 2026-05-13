@@ -28,6 +28,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.data.wc2026_bracket import (
+    KO_PROGRESSION,
+    R16_MATCHES,
+    QF_MATCHES,
+    SF_MATCHES,
+    FINAL_MATCH,
+    THIRD_FROM_LOSERS,
+    WINNER_STAGE,
+    assemble_r32,
+)
 from app.prediction.ensemble import MatchPrediction
 
 
@@ -92,13 +102,22 @@ def _knockout_winner(
     team_b: int,
     pred: MatchPrediction,
 ) -> int:
-    """Sample KO winner from the ensemble W/D/L; resolve draws by 1X2 ratio."""
+    """Sample KO winner: regulation → extra time (Poisson(λ/2)) → penalty shootout
+    (slightly biased toward the 1X2 favourite — historical shootout edge for
+    the stronger side is small but non-zero)."""
     outcome = _sample_outcome(rng, pred.p_home, pred.p_draw, pred.p_away)
     if outcome == 1:
         return team_a
     if outcome == -1:
         return team_b
-    # Draw → ET + penalties. Bias the shootout toward the slight 1X2 favourite.
+    # 90 min draw → 30 min extra time, modelled as half a regular match.
+    et_h = int(rng.poisson(pred.expected_home_goals / 2))
+    et_a = int(rng.poisson(pred.expected_away_goals / 2))
+    if et_h > et_a:
+        return team_a
+    if et_a > et_h:
+        return team_b
+    # Still tied → penalty shootout, slight 1X2 favourite bias.
     denom = pred.p_home + pred.p_away
     pa = pred.p_home / denom if denom > 0 else 0.5
     return team_a if rng.random() < pa else team_b
@@ -162,7 +181,7 @@ def simulate_tournament(
     group_matches: dict[str, list[tuple[int, int, MatchPrediction]]],
     knockout_pred_fn,
 ) -> TournamentResult:
-    """Run one full tournament simulation.
+    """Run one full tournament simulation using the official FIFA 2026 bracket.
 
     group_matches: {"A": [(home_id, away_id, MatchPrediction), ...], ...}
     knockout_pred_fn: callable(team_a_id, team_b_id) -> MatchPrediction
@@ -174,26 +193,46 @@ def simulate_tournament(
         for t in teams:
             furthest[t.team_id] = "group"
 
-    qualified: list[int] = []
-    for group in sorted(standings.keys()):
-        teams = standings[group]
-        qualified.extend([teams[0].team_id, teams[1].team_id])
+    top1: dict[str, int] = {}
+    top2: dict[str, int] = {}
+    for group, teams in standings.items():
+        if len(teams) >= 2:
+            top1[group] = teams[0].team_id
+            top2[group] = teams[1].team_id
     best_thirds = sorted(thirds, key=lambda t: (t.pts, t.gd, t.gf), reverse=True)[:8]
-    qualified.extend([t.team_id for t in best_thirds])
+    third_lookup = {t.group: t.team_id for t in best_thirds}
 
-    for tid in qualified:
-        furthest[tid] = "r32"
+    r32_fixtures = assemble_r32(top1, top2, third_lookup)
 
-    survivors = qualified[:]
-    for stage in ("r16", "qf", "sf", "final", "winner"):
-        next_round: list[int] = []
-        for i in range(0, len(survivors), 2):
-            a, b = survivors[i], survivors[i + 1]
-            pred = knockout_pred_fn(a, b)
-            winner = _knockout_winner(rng, a, b, pred)
-            furthest[winner] = stage
-            next_round.append(winner)
-        survivors = next_round
+    winners_by_match: dict[int, int] = {}
+    losers_by_match: dict[int, int] = {}
+    for match_no, a, b in r32_fixtures:
+        furthest[a] = "r32"
+        furthest[b] = "r32"
+        pred = knockout_pred_fn(a, b)
+        winner = _knockout_winner(rng, a, b, pred)
+        winners_by_match[match_no] = winner
+        losers_by_match[match_no] = b if winner == a else a
+        furthest[winner] = WINNER_STAGE[match_no]
+
+    for match_no in R16_MATCHES + QF_MATCHES + SF_MATCHES + [FINAL_MATCH]:
+        prev_a, prev_b = KO_PROGRESSION[match_no]
+        team_a = winners_by_match[prev_a]
+        team_b = winners_by_match[prev_b]
+        pred = knockout_pred_fn(team_a, team_b)
+        winner = _knockout_winner(rng, team_a, team_b, pred)
+        winners_by_match[match_no] = winner
+        losers_by_match[match_no] = team_b if winner == team_a else team_a
+        furthest[winner] = WINNER_STAGE[match_no]
+
+    # 3rd-place playoff between the two semifinal losers. Doesn't change
+    # `furthest_stage` (both already reached SF) — the bronze winner is just
+    # an extra coin we flip for completeness.
+    sf_a, sf_b = THIRD_FROM_LOSERS
+    bronze_a = losers_by_match[sf_a]
+    bronze_b = losers_by_match[sf_b]
+    bronze_pred = knockout_pred_fn(bronze_a, bronze_b)
+    _knockout_winner(rng, bronze_a, bronze_b, bronze_pred)
 
     return TournamentResult(furthest_stage=furthest)
 

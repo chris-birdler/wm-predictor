@@ -48,6 +48,18 @@ export const api = {
     http<SimulationResponse>(`/simulation/run${n_runs ? `?n_runs=${n_runs}` : ""}`, {
       method: "POST",
     }),
+  seedR32: () =>
+    http<{ stage: string; created: number }>("/bracket/seed-r32", { method: "POST" }),
+  seedNext: (stage: string) =>
+    http<{ stage: string; created: number }>(`/bracket/seed-next/${stage}`, {
+      method: "POST",
+    }),
+  autoFillBracket: () =>
+    http<{
+      stages_seeded: string[];
+      champion_team_id: number | null;
+      predictions: Prediction[];
+    }>("/bracket/auto-fill", { method: "POST" }),
   register: (username: string, email: string, password: string) =>
     http<{ access_token: string }>("/auth/register", {
       method: "POST",

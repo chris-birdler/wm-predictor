@@ -87,8 +87,8 @@ export default function Simulation() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-fifa-line bg-fifa-surface shadow-sm">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-fifa-line bg-fifa-surface shadow-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-fifa-line text-[10px] uppercase tracking-wider text-fifa-muted">
                   <th className="px-4 py-3 text-left font-semibold">Team</th>

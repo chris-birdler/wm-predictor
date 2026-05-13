@@ -42,6 +42,7 @@ class Match(Base):
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_finished: Mapped[bool] = mapped_column(default=False)
     venue: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fifa_match_no: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     home_team: Mapped[Team] = relationship(Team, foreign_keys=[home_team_id])
     away_team: Mapped[Team] = relationship(Team, foreign_keys=[away_team_id])

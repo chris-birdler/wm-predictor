@@ -43,16 +43,30 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
   };
 
   const hasActual = match.is_finished && match.home_score != null && match.away_score != null;
-  const homeScore = hasActual
-    ? match.home_score
+  // KO matches with a 90' draw display the post-ET score in the box. The
+  // 90' line and (if relevant) the penalty result move to a small caption.
+  const useEtBox = !hasActual && prediction?.extra_time_score != null;
+  const boxScore = hasActual
+    ? [match.home_score, match.away_score]
     : prediction
-      ? prediction.predicted_score[0]
+      ? (useEtBox ? prediction.extra_time_score! : prediction.predicted_score)
       : null;
-  const awayScore = hasActual
-    ? match.away_score
-    : prediction
-      ? prediction.predicted_score[1]
-      : null;
+  const homeScore = boxScore ? boxScore[0] : null;
+  const awayScore = boxScore ? boxScore[1] : null;
+
+  const koCaption = (() => {
+    if (hasActual || !prediction) return null;
+    const pen = prediction.penalty_score;
+    const et = prediction.extra_time_score;
+    const reg = prediction.predicted_score;
+    if (pen) {
+      return `${reg[0]}:${reg[1]} n.V. · ${pen[0]}:${pen[1]} i.E.`;
+    }
+    if (et) {
+      return `${reg[0]}:${reg[1]} · n.V.`;
+    }
+    return null;
+  })();
 
   const statusLabel = hasActual ? "Result" : prediction ? "Predicted" : "Scheduled";
   const statusColor = hasActual
@@ -79,10 +93,17 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
           </span>
           <span className="text-base leading-none">{flagEmoji(match.home.fifa_code)}</span>
         </div>
-        <div className="flex w-20 items-center justify-center gap-2 rounded-md bg-fifa-chip px-2 py-1.5 font-display text-base font-bold tabular-nums text-fifa-ink">
-          <span className="min-w-[1ch] text-center">{homeScore ?? "–"}</span>
-          <span className="text-fifa-muted">:</span>
-          <span className="min-w-[1ch] text-center">{awayScore ?? "–"}</span>
+        <div className="flex w-20 flex-col items-center">
+          <div className="flex w-full items-center justify-center gap-2 rounded-md bg-fifa-chip px-2 py-1.5 font-display text-base font-bold tabular-nums text-fifa-ink">
+            <span className="min-w-[1ch] text-center">{homeScore ?? "–"}</span>
+            <span className="text-fifa-muted">:</span>
+            <span className="min-w-[1ch] text-center">{awayScore ?? "–"}</span>
+          </div>
+          {koCaption && (
+            <span className="mt-0.5 whitespace-nowrap text-[9px] font-semibold tabular-nums text-fifa-muted">
+              {koCaption}
+            </span>
+          )}
         </div>
         <div className="flex flex-1 items-center gap-2 truncate">
           <span className="text-base leading-none">{flagEmoji(match.away.fifa_code)}</span>

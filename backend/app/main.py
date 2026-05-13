@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, matches, predictions, simulation, teams
+from app.api import auth, bracket, matches, predictions, simulation, teams
 from app.config import settings
 from app.db import Base, engine
 
@@ -29,6 +29,7 @@ app.include_router(teams.router)
 app.include_router(matches.router)
 app.include_router(predictions.router)
 app.include_router(simulation.router)
+app.include_router(bracket.router)
 
 
 @app.get("/health")

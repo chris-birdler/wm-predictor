@@ -13,6 +13,16 @@ from app.prediction.ensemble import predict_match
 router = APIRouter(prefix="/predictions", tags=["predictions"])
 
 
+KO_STAGES = {
+    MatchStage.R32,
+    MatchStage.R16,
+    MatchStage.QF,
+    MatchStage.SF,
+    MatchStage.THIRD,
+    MatchStage.FINAL,
+}
+
+
 class PredictionOut(BaseModel):
     match_id: int
     p_home: float
@@ -21,6 +31,12 @@ class PredictionOut(BaseModel):
     expected_home_goals: float
     expected_away_goals: float
     predicted_score: tuple[int, int]
+    # KO matches: filled in when 90' is a draw. `extra_time_score` is the
+    # cumulative score after 120' (regulation + ET). `penalty_score` is set
+    # only when ET also ended level — the shootout result, displayed as
+    # "1:1 i.E. 4:3" in standard German football notation.
+    extra_time_score: tuple[int, int] | None = None
+    penalty_score: tuple[int, int] | None = None
     has_odds: bool  # bookmaker odds were used as one of the ensemble components
 
 
@@ -39,16 +55,24 @@ def _predicted_score(
     distributions, while round(0.74) = 1 forces every match to give the
     underdog at least a goal.
 
-    If the mode already produces the same winner as argmax(p_h, p_d, p_a)
-    from the ensemble, return it. Otherwise pick the integer scoreline
-    closest in L2 distance to (λ_h, λ_a) that respects the ensemble winner.
+    If the mode already produces the same winner as the ensemble's
+    preferred outcome, return it. Otherwise pick the integer scoreline
+    closest in L2 distance to (λ_h, λ_a) that respects that outcome.
+
+    Draws are picked when `p_draw` is within 15pp of the leader. Pure
+    argmax under-counts draws because the ensemble's `p_draw` rarely
+    exceeds ~30% even in pick'em matches (typical close line: 38/30/32),
+    yet a 1:1 is the right prediction for such matches. 15pp lands the
+    overall draw share near the ~25–28% baseline seen in international
+    tournaments.
     """
-    if p_h >= p_d and p_h >= p_a:
-        winner = 1   # home wins → h > a
-    elif p_a >= p_d:
-        winner = -1  # away wins → a > h
-    else:
+    leader = max(p_h, p_d, p_a)
+    if p_d >= leader - 0.15:
         winner = 0   # draw → h == a
+    elif p_h >= p_a:
+        winner = 1   # home wins → h > a
+    else:
+        winner = -1  # away wins → a > h
 
     h_base = math.floor(lam_h)
     a_base = math.floor(lam_a)
@@ -73,6 +97,35 @@ def _predicted_score(
     return best
 
 
+def _ko_extension(
+    score: tuple[int, int],
+    lam_h: float,
+    lam_a: float,
+    p_h: float,
+    p_a: float,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    """For a KO match whose 90' ended level, predict the ET total and
+    (if still tied) the penalty-shootout result.
+
+    Step 1 — baseline ET goals via Poisson mode at half rate (30 min ≈
+    half a regulation match). Step 2 — if ET still tied, the 1X2 edge
+    breaks it: a clear favourite (>5pp gap on home/away, ignoring the
+    draw column) scores the decisive ET goal; an essentially level
+    1X2 (<5pp gap) goes to penalties. This produces a realistic mix
+    instead of routing every KO draw to a shootout."""
+    h, a = score
+    et_h = h + math.floor(lam_h / 2)
+    et_a = a + math.floor(lam_a / 2)
+    if et_h != et_a:
+        return (et_h, et_a), None
+    if p_h - p_a >= 0.05:
+        return (et_h + 1, et_a), None
+    if p_a - p_h >= 0.05:
+        return (et_h, et_a + 1), None
+    pen = (4, 3) if p_h >= p_a else (3, 4)
+    return (et_h, et_a), pen
+
+
 def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
     pred = predict_match(db, match)
     record = ModelPrediction(
@@ -86,6 +139,25 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
     )
     db.add(record)
     db.commit()
+
+    score = _predicted_score(
+        pred.expected_home_goals,
+        pred.expected_away_goals,
+        pred.p_home,
+        pred.p_draw,
+        pred.p_away,
+    )
+    et_score: tuple[int, int] | None = None
+    pen_score: tuple[int, int] | None = None
+    if match.stage in KO_STAGES and score[0] == score[1]:
+        et_score, pen_score = _ko_extension(
+            score,
+            pred.expected_home_goals,
+            pred.expected_away_goals,
+            pred.p_home,
+            pred.p_away,
+        )
+
     return PredictionOut(
         match_id=match.id,
         p_home=pred.p_home,
@@ -93,13 +165,9 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
         p_away=pred.p_away,
         expected_home_goals=pred.expected_home_goals,
         expected_away_goals=pred.expected_away_goals,
-        predicted_score=_predicted_score(
-            pred.expected_home_goals,
-            pred.expected_away_goals,
-            pred.p_home,
-            pred.p_draw,
-            pred.p_away,
-        ),
+        predicted_score=score,
+        extra_time_score=et_score,
+        penalty_score=pen_score,
         has_odds="odds" in pred.components,
     )
 

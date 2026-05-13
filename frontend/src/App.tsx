@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Groups from "./pages/Groups";
 import Playoffs from "./pages/Playoffs";
 import Simulation from "./pages/Simulation";
@@ -23,50 +23,29 @@ function NavLink({ to, label }: { to: string; label: string }) {
 }
 
 export default function App() {
-  const token = localStorage.getItem("token");
-  const nav = useNavigate();
-  const logout = () => {
-    localStorage.removeItem("token");
-    nav("/login");
-  };
-
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-fifa-line bg-fifa-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center gap-8 px-6">
-          <Link to="/" className="flex items-center gap-2 py-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-fifa-gradient font-display text-sm font-black text-white">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 px-4 sm:gap-x-8 sm:px-6">
+          <Link to="/" className="flex min-w-0 items-center gap-2 py-3">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-fifa-gradient font-display text-sm font-black text-white">
               26
             </span>
-            <span className="font-display text-base font-extrabold tracking-tight text-fifa-ink">
-              FIFA World Cup 26™ <span className="font-medium text-fifa-dim">Predictor</span>
+            <span className="truncate font-display text-base font-extrabold tracking-tight text-fifa-ink">
+              <span className="hidden sm:inline">
+                FIFA World Cup 26™ <span className="font-medium text-fifa-dim">Predictor</span>
+              </span>
+              <span className="sm:hidden">WC 26 Predictor</span>
             </span>
           </Link>
-          <nav className="flex">
+          <nav className="order-3 -mx-4 ml-auto flex w-[calc(100%+2rem)] justify-around border-t border-fifa-line/60 sm:order-none sm:w-auto sm:flex-none sm:justify-start sm:border-0">
             <NavLink to="/" label="Standings" />
             <NavLink to="/playoffs" label="Knockout" />
             <NavLink to="/simulation" label="Simulation" />
           </nav>
-          <div className="ml-auto py-3">
-            {token ? (
-              <button
-                onClick={logout}
-                className="rounded-md px-3 py-1.5 text-sm font-medium text-fifa-dim hover:text-fifa-ink"
-              >
-                Sign out
-              </button>
-            ) : (
-              <Link
-                to="/login"
-                className="rounded-md border border-fifa-line bg-fifa-surface px-3 py-1.5 text-sm font-semibold text-fifa-ink hover:bg-fifa-chip"
-              >
-                Sign in
-              </Link>
-            )}
-          </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <Routes>
           <Route path="/" element={<Groups />} />
           <Route path="/playoffs" element={<Playoffs />} />

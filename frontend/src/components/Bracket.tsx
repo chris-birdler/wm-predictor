@@ -6,6 +6,9 @@ interface Props {
   predictions: Record<number, Prediction>;
   onPredictions: (preds: Prediction[]) => void;
   expectedSlots: Record<string, number>;
+  // When false, render every slot as a placeholder regardless of seeded matches.
+  // Used to keep the knockout bracket blank until group standings are complete.
+  groupsComplete: boolean;
 }
 
 const STAGES: { key: string; label: string; sub: string }[] = [
@@ -35,12 +38,18 @@ function PlaceholderSlot({ index }: { index: number }) {
   );
 }
 
-export function Bracket({ matchesByStage, predictions, onPredictions, expectedSlots }: Props) {
+export function Bracket({
+  matchesByStage,
+  predictions,
+  onPredictions,
+  expectedSlots,
+  groupsComplete,
+}: Props) {
   return (
     <div className="overflow-x-auto pb-6">
       <div className="flex min-w-max gap-5">
         {STAGES.map(({ key, label, sub }) => {
-          const matches = matchesByStage[key] ?? [];
+          const matches = groupsComplete ? matchesByStage[key] ?? [] : [];
           const expected = expectedSlots[key] ?? matches.length;
           const placeholders = Math.max(0, expected - matches.length);
           return (

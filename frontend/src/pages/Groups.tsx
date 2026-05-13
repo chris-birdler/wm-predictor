@@ -1,30 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { GroupCard } from "../components/GroupCard";
-import type { Prediction } from "../types";
+import { usePredictions } from "../state/predictions";
 
 export default function Groups() {
+  const queryClient = useQueryClient();
   const teamsQ = useQuery({ queryKey: ["teams-by-group"], queryFn: api.teamsByGroup });
   const matchesQ = useQuery({
     queryKey: ["matches", "group"],
     queryFn: () => api.matches({ stage: "group" }),
   });
   const [busy, setBusy] = useState(false);
-  const [predictions, setPredictions] = useState<Record<number, Prediction>>({});
-
-  const mergePredictions = (preds: Prediction[]) =>
-    setPredictions((prev) => {
-      const next = { ...prev };
-      for (const p of preds) next[p.match_id] = p;
-      return next;
-    });
+  const [seeded, setSeeded] = useState(false);
+  const { predictions, mergePredictions } = usePredictions();
 
   const handleAll = async () => {
     setBusy(true);
+    setSeeded(false);
     try {
       const result = await api.predictAllGroups();
       mergePredictions(result);
+      await api.seedR32();
+      await queryClient.invalidateQueries({ queryKey: ["matches"] });
+      setSeeded(true);
     } finally {
       setBusy(false);
     }
@@ -44,7 +44,12 @@ export default function Groups() {
     (matchesByGroup[m.group] ??= []).push(m);
   }
 
-  const predictedCount = Object.keys(predictions).length;
+  // Count only group-stage predictions — KO predictions live in the same
+  // state map but must not inflate the "matches predicted" badge here.
+  const groupMatchIds = new Set((matchesQ.data ?? []).map((m) => m.id));
+  const predictedCount = Object.keys(predictions).filter((id) =>
+    groupMatchIds.has(Number(id)),
+  ).length;
   const totalMatches = matchesQ.data?.length ?? 0;
 
   return (
@@ -81,6 +86,19 @@ export default function Groups() {
           </button>
         </div>
       </section>
+      {seeded && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-fifa-pink/40 bg-fifa-pink/5 px-4 py-3 text-sm">
+          <span className="text-fifa-ink">
+            R32 bracket built from these standings.
+          </span>
+          <Link
+            to="/playoffs"
+            className="rounded-md bg-fifa-pink px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-fifa-magenta"
+          >
+            Go to Knockout →
+          </Link>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 text-[11px] font-medium text-fifa-dim">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-fifa-green" />

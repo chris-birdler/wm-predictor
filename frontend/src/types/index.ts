@@ -34,6 +34,8 @@ export interface Prediction {
   expected_home_goals: number;
   expected_away_goals: number;
   predicted_score: [number, number];
+  extra_time_score: [number, number] | null;
+  penalty_score: [number, number] | null;
   has_odds: boolean;
 }
 
