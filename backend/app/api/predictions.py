@@ -140,16 +140,24 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
     db.add(record)
     db.commit()
 
-    score = _predicted_score(
-        pred.expected_home_goals,
-        pred.expected_away_goals,
-        pred.p_home,
-        pred.p_draw,
-        pred.p_away,
+    actual = (
+        match.is_finished
+        and match.home_score is not None
+        and match.away_score is not None
     )
+    if actual:
+        score = (match.home_score, match.away_score)
+    else:
+        score = _predicted_score(
+            pred.expected_home_goals,
+            pred.expected_away_goals,
+            pred.p_home,
+            pred.p_draw,
+            pred.p_away,
+        )
     et_score: tuple[int, int] | None = None
     pen_score: tuple[int, int] | None = None
-    if match.stage in KO_STAGES and score[0] == score[1]:
+    if not actual and match.stage in KO_STAGES and score[0] == score[1]:
         et_score, pen_score = _ko_extension(
             score,
             pred.expected_home_goals,

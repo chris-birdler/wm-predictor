@@ -134,19 +134,24 @@ STAGE_ORDER = {s: i for i, s in enumerate(STAGES)}
 
 def _simulate_groups(
     rng: np.random.Generator,
-    group_matches: dict[str, list[tuple[int, int, MatchPrediction]]],
+    group_matches: dict[str, list[tuple[int, int, MatchPrediction, tuple[int, int] | None]]],
 ) -> tuple[dict[str, list[GroupTeam]], list[GroupTeam]]:
     standings: dict[str, dict[int, GroupTeam]] = defaultdict(dict)
 
     for group, matches in group_matches.items():
-        for home_id, away_id, pred in matches:
-            outcome = _sample_outcome(rng, pred.p_home, pred.p_draw, pred.p_away)
-            h_goals, a_goals = _sample_goals_given_outcome(
-                rng,
-                pred.expected_home_goals,
-                pred.expected_away_goals,
-                outcome,
-            )
+        for home_id, away_id, pred, fixed in matches:
+            if fixed is not None:
+                # Already played — use the real scoreline deterministically.
+                h_goals, a_goals = fixed
+                outcome = 1 if h_goals > a_goals else -1 if a_goals > h_goals else 0
+            else:
+                outcome = _sample_outcome(rng, pred.p_home, pred.p_draw, pred.p_away)
+                h_goals, a_goals = _sample_goals_given_outcome(
+                    rng,
+                    pred.expected_home_goals,
+                    pred.expected_away_goals,
+                    outcome,
+                )
 
             for tid in (home_id, away_id):
                 if tid not in standings[group]:
@@ -178,7 +183,7 @@ def _simulate_groups(
 
 def simulate_tournament(
     rng: np.random.Generator,
-    group_matches: dict[str, list[tuple[int, int, MatchPrediction]]],
+    group_matches: dict[str, list[tuple[int, int, MatchPrediction, tuple[int, int] | None]]],
     knockout_pred_fn,
 ) -> TournamentResult:
     """Run one full tournament simulation using the official FIFA 2026 bracket.
@@ -240,7 +245,7 @@ def simulate_tournament(
 def run_monte_carlo(
     n_runs: int,
     team_ids: list[int],
-    group_matches: dict[str, list[tuple[int, int, MatchPrediction]]],
+    group_matches: dict[str, list[tuple[int, int, MatchPrediction, tuple[int, int] | None]]],
     knockout_pred_fn,
     seed: int | None = None,
 ) -> dict[int, dict[str, float]]:

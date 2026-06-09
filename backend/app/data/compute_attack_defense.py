@@ -31,7 +31,7 @@ import math
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
-from app.models.match import Match
+from app.models.match import Match, MatchStage
 from app.models.team import Team
 
 
@@ -43,10 +43,14 @@ N_ITERATIONS = 40
 def compute(db: Session) -> tuple[int, float]:
     """Populate Team.attack_rate / defense_rate. Returns (n_teams, league_avg)."""
     teams = db.query(Team).all()
+    # Only the historical rows (stage=OTHER) feed the rate model. The seeded
+    # WC 2026 fixtures are excluded even once finished: every WC result is also
+    # ingested as an OTHER row, so counting the fixture too would double-count
+    # it (and bias each team's attack/defense toward its WC form).
     matches = (
         db.query(Match)
         .filter(
-            Match.is_finished.is_(True),
+            Match.stage == MatchStage.OTHER,
             Match.home_score.is_not(None),
             Match.away_score.is_not(None),
         )

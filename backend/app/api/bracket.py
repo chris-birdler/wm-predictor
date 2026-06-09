@@ -66,6 +66,21 @@ def _latest_predictions(db: Session, match_ids: list[int]) -> dict[int, ModelPre
 
 
 def _winner_team_id(match: Match, pred: ModelPrediction) -> int:
+    # A finished KO match with a decisive score fixes the winner directly.
+    # (A level finished score means the tie was settled on penalties, which the
+    # goal columns don't capture — fall through to the predicted resolution
+    # until shootout data is wired in.)
+    if (
+        match.is_finished
+        and match.home_score is not None
+        and match.away_score is not None
+        and match.home_score != match.away_score
+    ):
+        return (
+            match.home_team_id
+            if match.home_score > match.away_score
+            else match.away_team_id
+        )
     h, a = _predicted_score(
         pred.expected_home_goals, pred.expected_away_goals,
         pred.p_home, pred.p_draw, pred.p_away,
@@ -107,7 +122,11 @@ def _compute_group_standings(
     if not group_matches:
         raise HTTPException(400, "No group matches seeded.")
     preds = _latest_predictions(db, [m.id for m in group_matches])
-    missing = [m.id for m in group_matches if m.id not in preds]
+    # Finished matches contribute their real result; only the still-to-play
+    # ones need a prediction.
+    missing = [
+        m.id for m in group_matches if not m.is_finished and m.id not in preds
+    ]
     if missing:
         raise HTTPException(
             400,
@@ -116,10 +135,13 @@ def _compute_group_standings(
 
     standings: dict[str, dict[int, dict]] = defaultdict(dict)
     for m in group_matches:
-        h, a = _predicted_score(
-            preds[m.id].expected_home_goals, preds[m.id].expected_away_goals,
-            preds[m.id].p_home, preds[m.id].p_draw, preds[m.id].p_away,
-        )
+        if m.is_finished and m.home_score is not None and m.away_score is not None:
+            h, a = m.home_score, m.away_score
+        else:
+            h, a = _predicted_score(
+                preds[m.id].expected_home_goals, preds[m.id].expected_away_goals,
+                preds[m.id].p_home, preds[m.id].p_draw, preds[m.id].p_away,
+            )
         for tid in (m.home_team_id, m.away_team_id):
             if tid not in standings[m.group]:
                 standings[m.group][tid] = {"team_id": tid, "pts": 0, "gd": 0, "gf": 0}

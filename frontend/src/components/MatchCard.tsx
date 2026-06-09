@@ -68,7 +68,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
     return null;
   })();
 
-  const statusLabel = hasActual ? "Result" : prediction ? "Predicted" : "Scheduled";
+  const statusLabel = hasActual ? "Final" : prediction ? "Predicted" : "Scheduled";
   const statusColor = hasActual
     ? "text-fifa-green"
     : prediction
@@ -77,7 +77,16 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
 
   return (
     <div className="relative rounded-lg border border-fifa-line bg-fifa-surface px-3 py-2 transition hover:border-fifa-ink/20">
-      {prediction?.has_odds && (
+      {hasActual && (
+        <span
+          className="absolute right-2 top-1.5 inline-flex items-center gap-1 rounded-full bg-fifa-green/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fifa-green"
+          title="Played — final result, not a prediction"
+        >
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-fifa-green" />
+          Final
+        </span>
+      )}
+      {!hasActual && prediction?.has_odds && (
         <span
           className="absolute right-2 top-1.5 inline-flex items-center gap-1 rounded-full bg-fifa-green/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fifa-green"
           title="Bookmaker odds available — ensemble used the market signal (60% weight)"
@@ -112,15 +121,19 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
           </span>
         </div>
       </div>
-      {prediction && probBar(prediction.p_home, prediction.p_draw, prediction.p_away)}
+      {!hasActual &&
+        prediction &&
+        probBar(prediction.p_home, prediction.p_draw, prediction.p_away)}
       <div className="mt-2 flex items-center gap-2 text-xs">
-        <button
-          onClick={handlePredict}
-          disabled={busy}
-          className="rounded-md border border-fifa-line bg-fifa-page px-2.5 py-1 font-semibold text-fifa-ink hover:border-fifa-pink hover:text-fifa-pink disabled:opacity-50"
-        >
-          {busy ? "…" : prediction ? "Re-predict" : "Predict"}
-        </button>
+        {!hasActual && (
+          <button
+            onClick={handlePredict}
+            disabled={busy}
+            className="rounded-md border border-fifa-line bg-fifa-page px-2.5 py-1 font-semibold text-fifa-ink hover:border-fifa-pink hover:text-fifa-pink disabled:opacity-50"
+          >
+            {busy ? "…" : prediction ? "Re-predict" : "Predict"}
+          </button>
+        )}
         <span className={`text-[10px] font-bold uppercase tracking-wide ${statusColor}`}>
           {statusLabel}
         </span>

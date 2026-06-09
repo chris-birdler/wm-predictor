@@ -101,9 +101,14 @@ def ingest_historical(db: Session, since_year: int = 1990) -> tuple[int, int]:
 
     team_cache: dict[str, Team] = {}
     used_codes: set[str] = {t.fifa_code for t in db.query(Team).all()}
+    # Dedup only against previously-ingested historical rows (stage=OTHER).
+    # The seeded WC 2026 fixtures (group/KO) may be marked finished once played
+    # (see app.data.apply_results); they must NOT block the same WC match from
+    # being ingested here as an OTHER row, otherwise the result would never
+    # reach the Elo replay.
     existing_keys: set[tuple[int, int, str]] = {
         (m.home_team_id, m.away_team_id, m.kickoff.date().isoformat())
-        for m in db.query(Match).filter(Match.is_finished.is_(True)).all()
+        for m in db.query(Match).filter(Match.stage == MatchStage.OTHER).all()
     }
     matches_added = 0
 

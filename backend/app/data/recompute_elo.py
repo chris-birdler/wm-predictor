@@ -13,7 +13,7 @@ replay chronologically.
 from app.data.compute_attack_defense import compute as compute_attack_defense
 from app.data.historical_ingestor import ingest_historical
 from app.db import SessionLocal
-from app.models.match import Match
+from app.models.match import Match, MatchStage
 from app.models.team import Team
 
 
@@ -21,9 +21,13 @@ def recompute() -> None:
     db = SessionLocal()
     try:
         n_teams = db.query(Team).update({Team.elo: 1500.0})
-        deleted = db.query(Match).filter(Match.is_finished.is_(True)).delete()
+        # Delete only the historical rows (stage=OTHER); they are refetched and
+        # replayed below. The seeded WC 2026 fixtures (group/KO) are kept even
+        # when they have been marked finished with a real result — those scores
+        # drive the standings/bracket and must survive every refresh.
+        deleted = db.query(Match).filter(Match.stage == MatchStage.OTHER).delete()
         db.commit()
-        print(f"Reset {n_teams} team ratings to 1500, deleted {deleted} finished matches")
+        print(f"Reset {n_teams} team ratings to 1500, deleted {deleted} historical matches")
 
         matches_added, teams_touched = ingest_historical(db)
         print(f"Replayed {matches_added} matches across {teams_touched} teams")

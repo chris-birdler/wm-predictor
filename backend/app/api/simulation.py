@@ -52,8 +52,15 @@ def run_simulation(n_runs: int = 0, db: Session = Depends(get_db)) -> Simulation
     group_matches: dict[str, list] = {}
     for m in group_matches_q:
         pred = predict_match(db, m)
+        # Already-played group matches are fixed to their real scoreline so the
+        # simulation conditions on reality instead of re-sampling settled games.
+        fixed = (
+            (m.home_score, m.away_score)
+            if m.is_finished and m.home_score is not None and m.away_score is not None
+            else None
+        )
         group_matches.setdefault(m.group or "?", []).append(
-            (m.home_team_id, m.away_team_id, pred)
+            (m.home_team_id, m.away_team_id, pred, fixed)
         )
 
     # Pre-compute predictions for every possible knockout pairing once.
