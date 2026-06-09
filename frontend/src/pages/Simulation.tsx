@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api/client";
 import type { TeamProbs } from "../types";
@@ -8,12 +8,30 @@ export default function Simulation() {
   const [results, setResults] = useState<TeamProbs[]>([]);
   const [busy, setBusy] = useState(false);
   const [n, setN] = useState(10000);
+  const [storedRuns, setStoredRuns] = useState<number | null>(null);
+
+  // Show the latest stored run (computed by the 6h refresh pipeline) on load,
+  // so the page isn't blank before anyone clicks "Run simulation".
+  useEffect(() => {
+    api
+      .latestSimulation()
+      .then((resp) => {
+        if (resp.teams.length > 0) {
+          setResults(resp.teams);
+          setStoredRuns(resp.n_runs);
+        }
+      })
+      .catch(() => {
+        /* no stored run yet — leave the page in its empty state */
+      });
+  }, []);
 
   const run = async () => {
     setBusy(true);
     try {
       const resp = await api.runSimulation(n);
       setResults(resp.teams);
+      setStoredRuns(resp.n_runs);
     } finally {
       setBusy(false);
     }
@@ -38,7 +56,8 @@ export default function Simulation() {
           </h1>
           <p className="mt-2 max-w-xl text-sm text-fifa-dim">
             Each run samples 72 group matches and the full knockout from the
-            ensemble model. Probabilities aggregate over {n.toLocaleString()} runs.
+            ensemble model. Probabilities aggregate over{" "}
+            {(storedRuns ?? n).toLocaleString()} runs.
           </p>
         </div>
         <div className="flex items-end gap-3">

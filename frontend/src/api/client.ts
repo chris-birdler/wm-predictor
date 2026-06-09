@@ -48,6 +48,7 @@ export const api = {
     http<SimulationResponse>(`/simulation/run${n_runs ? `?n_runs=${n_runs}` : ""}`, {
       method: "POST",
     }),
+  latestSimulation: () => http<SimulationResponse>("/simulation/latest"),
   seedR32: () =>
     http<{ stage: string; created: number }>("/bracket/seed-r32", { method: "POST" }),
   seedNext: (stage: string) =>

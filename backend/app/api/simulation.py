@@ -31,6 +31,48 @@ class SimulationResponse(BaseModel):
     teams: list[TeamProbs]
 
 
+@router.get("/latest", response_model=SimulationResponse)
+def latest_simulation(db: Session = Depends(get_db)) -> SimulationResponse:
+    """Return the most recently stored simulation run.
+
+    The 6h refresh pipeline (app.data.refresh_all) computes and persists a full
+    10k-run simulation on every cycle, so the page can show those results
+    instantly instead of forcing the browser to wait on a ~2 minute live POST
+    (which exceeds the reverse-proxy timeout). Returns an empty team list if no
+    run has been stored yet.
+    """
+    run = (
+        db.query(SimulationRun)
+        .order_by(SimulationRun.created_at.desc(), SimulationRun.id.desc())
+        .first()
+    )
+    if run is None:
+        return SimulationResponse(run_id=0, n_runs=0, teams=[])
+
+    rows_q = (
+        db.query(TeamSimulationResult, Team)
+        .join(Team, Team.id == TeamSimulationResult.team_id)
+        .filter(TeamSimulationResult.run_id == run.id)
+        .all()
+    )
+    rows = [
+        TeamProbs(
+            team_id=team.id,
+            name=team.name,
+            fifa_code=team.fifa_code,
+            p_advance_group=tsr.p_advance_group,
+            p_r16=tsr.p_r16,
+            p_qf=tsr.p_qf,
+            p_sf=tsr.p_sf,
+            p_final=tsr.p_final,
+            p_winner=tsr.p_winner,
+        )
+        for tsr, team in rows_q
+    ]
+    rows.sort(key=lambda r: r.p_winner, reverse=True)
+    return SimulationResponse(run_id=run.id, n_runs=run.n_runs, teams=rows)
+
+
 @router.post("/run", response_model=SimulationResponse)
 def run_simulation(n_runs: int = 0, db: Session = Depends(get_db)) -> SimulationResponse:
     n = n_runs or settings.MC_DEFAULT_RUNS
