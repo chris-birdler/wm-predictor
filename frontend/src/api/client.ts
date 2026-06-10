@@ -30,7 +30,9 @@ async function http<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   teamsByGroup: () => http<Record<string, Team[]>>("/teams/by-group"),
-  matches: (params: { stage?: string; group?: string } = {}) => {
+  matches: (
+    params: { stage?: string; group?: string; match_type?: string; since?: string } = {},
+  ) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v) as [string, string][],
     ).toString();

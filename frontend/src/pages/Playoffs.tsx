@@ -34,7 +34,13 @@ const EXPECTED_SLOTS: Record<string, number> = {
 
 export default function Playoffs() {
   const queryClient = useQueryClient();
-  const q = useQuery({ queryKey: ["matches", "all"], queryFn: () => api.matches({}) });
+  // Only the 104 WC 2026 fixtures — NOT the ~32k historical Elo training
+  // matches an unfiltered /matches would return (a ~7.5 MB, multi-second
+  // payload that left the bracket blank while it loaded).
+  const q = useQuery({
+    queryKey: ["matches", "wc2026"],
+    queryFn: () => api.matches({ match_type: "worldcup", since: "2026-01-01" }),
+  });
   const teamsQ = useQuery({ queryKey: ["teams-by-group"], queryFn: api.teamsByGroup });
   const [busy, setBusy] = useState<string | null>(null);
   const [autoBusy, setAutoBusy] = useState(false);
