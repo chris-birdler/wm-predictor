@@ -3,10 +3,12 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.match import Match, MatchStage
+from app.models.odds import OddsSnapshot
 from app.models.prediction import ModelPrediction
 from app.prediction.ensemble import predict_match
 
@@ -126,6 +128,62 @@ def _ko_extension(
     return (et_h, et_a), pen
 
 
+def _derive_prediction_out(
+    match: Match,
+    p_home: float,
+    p_draw: float,
+    p_away: float,
+    expected_home_goals: float,
+    expected_away_goals: float,
+    has_odds: bool,
+) -> PredictionOut:
+    """Build a PredictionOut from raw 1X2 probs + expected goals.
+
+    All the display fields (scoreline, extra-time/penalty resolution) are pure,
+    deterministic functions of these inputs, so this is shared by the live POST
+    path and the stored GET /latest path — recomputing from a persisted
+    ModelPrediction yields exactly the same result the POST returned.
+    """
+    actual = (
+        match.is_finished
+        and match.home_score is not None
+        and match.away_score is not None
+    )
+    if actual:
+        score = (match.home_score, match.away_score)
+    else:
+        score = _predicted_score(
+            expected_home_goals,
+            expected_away_goals,
+            p_home,
+            p_draw,
+            p_away,
+        )
+    et_score: tuple[int, int] | None = None
+    pen_score: tuple[int, int] | None = None
+    if not actual and match.stage in KO_STAGES and score[0] == score[1]:
+        et_score, pen_score = _ko_extension(
+            score,
+            expected_home_goals,
+            expected_away_goals,
+            p_home,
+            p_away,
+        )
+
+    return PredictionOut(
+        match_id=match.id,
+        p_home=p_home,
+        p_draw=p_draw,
+        p_away=p_away,
+        expected_home_goals=expected_home_goals,
+        expected_away_goals=expected_away_goals,
+        predicted_score=score,
+        extra_time_score=et_score,
+        penalty_score=pen_score,
+        has_odds=has_odds,
+    )
+
+
 def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
     pred = predict_match(db, match)
     record = ModelPrediction(
@@ -140,44 +198,60 @@ def _compute_and_persist(db: Session, match: Match) -> PredictionOut:
     db.add(record)
     db.commit()
 
-    actual = (
-        match.is_finished
-        and match.home_score is not None
-        and match.away_score is not None
-    )
-    if actual:
-        score = (match.home_score, match.away_score)
-    else:
-        score = _predicted_score(
-            pred.expected_home_goals,
-            pred.expected_away_goals,
-            pred.p_home,
-            pred.p_draw,
-            pred.p_away,
-        )
-    et_score: tuple[int, int] | None = None
-    pen_score: tuple[int, int] | None = None
-    if not actual and match.stage in KO_STAGES and score[0] == score[1]:
-        et_score, pen_score = _ko_extension(
-            score,
-            pred.expected_home_goals,
-            pred.expected_away_goals,
-            pred.p_home,
-            pred.p_away,
-        )
-
-    return PredictionOut(
-        match_id=match.id,
-        p_home=pred.p_home,
-        p_draw=pred.p_draw,
-        p_away=pred.p_away,
-        expected_home_goals=pred.expected_home_goals,
-        expected_away_goals=pred.expected_away_goals,
-        predicted_score=score,
-        extra_time_score=et_score,
-        penalty_score=pen_score,
+    return _derive_prediction_out(
+        match,
+        pred.p_home,
+        pred.p_draw,
+        pred.p_away,
+        pred.expected_home_goals,
+        pred.expected_away_goals,
         has_odds="odds" in pred.components,
     )
+
+
+@router.get("/latest", response_model=list[PredictionOut])
+def latest_predictions(db: Session = Depends(get_db)) -> list[PredictionOut]:
+    """Return the most recently stored prediction for every match.
+
+    The 6h refresh pipeline (app.data.refresh_all) persists a ModelPrediction
+    for every group and knockout match, so the UI can render fully-populated
+    standings and a filled bracket on load — without anyone clicking "Predict".
+    The "Predict" buttons stay available for an explicit on-demand recompute,
+    but between cron cycles the underlying data doesn't change, so the page is
+    no longer blank by default.
+
+    Derived display fields are recomputed from the stored probabilities via the
+    same pure helpers the POST path uses, so they match exactly.
+    """
+    latest_ids = (
+        db.query(func.max(ModelPrediction.id))
+        .group_by(ModelPrediction.match_id)
+    )
+    rows = (
+        db.query(ModelPrediction, Match)
+        .join(Match, Match.id == ModelPrediction.match_id)
+        .filter(ModelPrediction.id.in_(latest_ids))
+        .all()
+    )
+    # has_odds == bookmaker odds existed for the match (the ensemble's "odds"
+    # component is present iff an OddsSnapshot row exists — see ensemble.py).
+    odds_match_ids = {
+        mid for (mid,) in db.query(OddsSnapshot.match_id).distinct().all()
+    }
+    out = [
+        _derive_prediction_out(
+            match,
+            p.p_home,
+            p.p_draw,
+            p.p_away,
+            p.expected_home_goals,
+            p.expected_away_goals,
+            has_odds=match.id in odds_match_ids,
+        )
+        for p, match in rows
+    ]
+    out.sort(key=lambda r: r.match_id)
+    return out
 
 
 @router.post("/match/{match_id}", response_model=PredictionOut)

@@ -36,6 +36,7 @@ export const api = {
     ).toString();
     return http<Match[]>(`/matches${qs ? "?" + qs : ""}`);
   },
+  latestPredictions: () => http<Prediction[]>("/predictions/latest"),
   predictMatch: (id: number) =>
     http<Prediction>(`/predictions/match/${id}`, { method: "POST" }),
   predictGroup: (group: string) =>

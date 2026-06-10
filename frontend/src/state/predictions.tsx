@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { api } from "../api/client";
 import type { Prediction } from "../types";
 
 interface PredictionsCtx {
@@ -21,6 +22,21 @@ export function PredictionsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetPredictions = useCallback(() => setPredictions({}), []);
+
+  // Bootstrap from the predictions the 6h refresh pipeline already persisted,
+  // so standings and the knockout bracket render filled on first load instead
+  // of forcing the user to click "Predict". Failures (nothing stored yet) just
+  // leave the empty state in place.
+  useEffect(() => {
+    api
+      .latestPredictions()
+      .then((preds) => {
+        if (preds.length > 0) mergePredictions(preds);
+      })
+      .catch(() => {
+        /* no stored predictions yet — keep empty state */
+      });
+  }, [mergePredictions]);
 
   return (
     <Ctx.Provider value={{ predictions, mergePredictions, resetPredictions }}>
