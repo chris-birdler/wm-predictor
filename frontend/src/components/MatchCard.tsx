@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { Match, Prediction } from "../types";
 import { flagEmoji } from "../utils/flag";
+import { formatKickoff } from "../utils/datetime";
 
 interface Props {
   match: Match;
@@ -68,7 +69,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
     return null;
   })();
 
-  const statusLabel = hasActual ? "Final" : prediction ? "Predicted" : "Scheduled";
+  const statusLabel = hasActual ? "Played" : prediction ? "Predicted" : "Scheduled";
   const statusColor = hasActual
     ? "text-fifa-green"
     : prediction
@@ -83,7 +84,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
           title="Played — final result, not a prediction"
         >
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-fifa-green" />
-          Final
+          Played
         </span>
       )}
       {!hasActual && prediction?.has_odds && (
@@ -137,14 +138,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
         <span className={`text-[10px] font-bold uppercase tracking-wide ${statusColor}`}>
           {statusLabel}
         </span>
-        <span className="ml-auto text-fifa-muted">
-          {new Date(match.kickoff).toLocaleString("en-US", {
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
+        <span className="ml-auto text-fifa-muted">{formatKickoff(match.kickoff)}</span>
       </div>
     </div>
   );
