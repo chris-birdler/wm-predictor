@@ -68,7 +68,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
     return null;
   })();
 
-  const statusLabel = hasActual ? "Final" : prediction ? "Predicted" : "Scheduled";
+  const statusLabel = hasActual ? "Played" : prediction ? "Predicted" : "Scheduled";
   const statusColor = hasActual
     ? "text-fifa-green"
     : prediction
@@ -83,7 +83,7 @@ export function MatchCard({ match, prediction, onPredict }: Props) {
           title="Played — final result, not a prediction"
         >
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-fifa-green" />
-          Final
+          Played
         </span>
       )}
       {!hasActual && prediction?.has_odds && (
