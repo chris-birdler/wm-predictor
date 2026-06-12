@@ -18,10 +18,13 @@ Run inside the backend container:
     python -m app.data.apply_results
 """
 
+import httpx
 import pandas as pd
 
+from app.config import settings
 from app.data.historical_ingestor import NAME_ALIASES, fetch_results_csv
 from app.data.manual_results import MANUAL_RESULTS
+from app.data.odds_ingestor import ODDS_API_SPORT, ODDS_NAME_ALIASES
 from app.db import SessionLocal
 from app.models.match import Match, MatchStage
 from app.models.team import Team
@@ -32,6 +35,22 @@ WC_YEAR = 2026
 
 def _canonical(name: str) -> str:
     return NAME_ALIASES.get(name, name)
+
+
+def _fetch_live_scores() -> list[dict]:
+    """Completed/live WC 2026 scores from The Odds API (same key as the odds feed).
+
+    This is the *timely* automatic source: a match shows up here minutes after it
+    finishes, well before the martj42 CSV is updated. ``daysFrom=3`` comfortably
+    spans the 6-hour refresh gap. Returns [] if no API key is configured.
+    """
+    if not settings.ODDS_API_KEY:
+        return []
+    url = f"{settings.ODDS_API_BASE}/sports/{ODDS_API_SPORT}/scores"
+    params = {"apiKey": settings.ODDS_API_KEY, "daysFrom": 3}
+    resp = httpx.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _apply_one(
@@ -102,7 +121,41 @@ def apply_results(db) -> tuple[int, int, list[str]]:
     already_finished = 0
     unmatched: list[str] = []
 
-    # 1. Automatic source: the martj42 CSV (canonicalise team names via aliases).
+    def _tally(outcome: str) -> None:
+        nonlocal newly_finished, already_finished
+        if outcome == "new":
+            newly_finished += 1
+        elif outcome == "same":
+            already_finished += 1
+
+    # 1. Timely automatic source: The Odds API /scores (completed games appear
+    #    minutes after full time). Non-fatal — fall through to CSV/manual if the
+    #    API is down or out of quota.
+    try:
+        for ev in _fetch_live_scores():
+            if not ev.get("completed"):
+                continue
+            scores = {s["name"]: s.get("score") for s in (ev.get("scores") or [])}
+            home_name, away_name = ev.get("home_team"), ev.get("away_team")
+            try:
+                hs, as_ = int(scores[home_name]), int(scores[away_name])
+            except (KeyError, TypeError, ValueError):
+                continue
+            _tally(
+                _apply_one(
+                    by_pair,
+                    teams,
+                    ODDS_NAME_ALIASES.get(home_name, home_name),
+                    ODDS_NAME_ALIASES.get(away_name, away_name),
+                    hs,
+                    as_,
+                    unmatched,
+                )
+            )
+    except Exception:  # noqa: BLE001 - live scores are best-effort
+        pass
+
+    # 2. Automatic source: the martj42 CSV (canonicalise team names via aliases).
     for _, row in df.iterrows():
         outcome = _apply_one(
             by_pair,
@@ -113,18 +166,12 @@ def apply_results(db) -> tuple[int, int, list[str]]:
             row["away_score"],
             unmatched,
         )
-        if outcome == "new":
-            newly_finished += 1
-        elif outcome == "same":
-            already_finished += 1
+        _tally(outcome)
 
-    # 2. Manual overrides for matches the CSV hasn't published yet (DB names).
+    # 3. Manual overrides — emergency hand-entry for anything the two automatic
+    #    sources missed; applied last so it wins on conflict (DB team names).
     for home_name, away_name, hs, as_ in MANUAL_RESULTS:
-        outcome = _apply_one(by_pair, teams, home_name, away_name, hs, as_, unmatched)
-        if outcome == "new":
-            newly_finished += 1
-        elif outcome == "same":
-            already_finished += 1
+        _tally(_apply_one(by_pair, teams, home_name, away_name, hs, as_, unmatched))
 
     db.commit()
     return newly_finished, already_finished, unmatched

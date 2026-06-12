@@ -1,23 +1,20 @@
-"""Manually-curated real WC 2026 results.
+"""Emergency hand-entered WC 2026 results.
 
-The martj42 results CSV (see app.data.apply_results) is the automatic source,
-but it lags real kickoffs by up to a day or two — the fixture rows appear with
-empty score columns until a maintainer fills them in. This module bridges that
-gap: results entered here are applied to the seeded fixtures immediately, so the
-site shows the real scoreline (and standings / Monte-Carlo honour it) the moment
-a match finishes, without waiting for the upstream dataset.
+apply_results() has two automatic sources that need no maintenance:
+  1. The Odds API /scores endpoint — completed games appear minutes after full
+     time (the timely source).
+  2. The martj42 results CSV — authoritative, but lags kickoff by a day or more.
 
-Entries are keyed by team name **as stored in the DB** (see app.data.seed), with
-the scoreline oriented home-vs-away as the match was actually played. Order in
-the list does not matter; each team pair meets once in the group stage. Once the
-CSV catches up with the same score it becomes a harmless no-op, so entries can be
-left in place (or pruned) safely.
+This list is the manual fallback for the rare case both miss a result (e.g. the
+Odds API is out of quota and the CSV hasn't published yet). It is applied last,
+so an entry here wins on conflict. Normally it stays empty.
+
+Entries are keyed by team name **as stored in the DB** (see app.data.seed), the
+scoreline oriented home-vs-away as actually played. Order does not matter; each
+pair meets once in the group stage. Once an automatic source carries the same
+score the entry becomes a harmless no-op.
 
     (home_team, away_team, home_score, away_score)
 """
 
-MANUAL_RESULTS: list[tuple[str, str, int, int]] = [
-    # Matchday 1 — 11 Jun 2026 (Group A openers). CSV not yet updated upstream.
-    ("Mexico", "South Africa", 2, 0),
-    ("Korea Republic", "Czech Republic", 2, 1),
-]
+MANUAL_RESULTS: list[tuple[str, str, int, int]] = []
