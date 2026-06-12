@@ -36,6 +36,7 @@ from app.api.simulation import run_simulation
 from app.data.apply_results import apply_results
 from app.data.odds_ingestor import ingest_odds
 from app.data.recompute_elo import recompute
+from app.data.schedule_sync import sync_schedule
 from app.db import SessionLocal
 
 
@@ -71,7 +72,22 @@ def main() -> int:
         _log(f"[elo] FAILED: {e!r}")
         traceback.print_exc()
 
-    # 3. Write real WC results onto the seeded fixtures (mark them finished).
+    # 3a. Sync real kickoff times onto the seeded fixtures (replaces the
+    #     synthetic placeholder schedule).
+    db = SessionLocal()
+    try:
+        updated, sched_unmatched = sync_schedule(db)
+        _log(
+            f"[schedule] {updated} kickoffs updated, {len(sched_unmatched)} unmatched"
+        )
+    except Exception as e:  # noqa: BLE001
+        failures.append("schedule")
+        _log(f"[schedule] FAILED: {e!r}")
+        traceback.print_exc()
+    finally:
+        db.close()
+
+    # 3b. Write real WC results onto the seeded fixtures (mark them finished).
     db = SessionLocal()
     try:
         new, existing, unmatched = apply_results(db)
